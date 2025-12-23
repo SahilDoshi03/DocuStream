@@ -1,6 +1,7 @@
 "use client";
 
 import { useChat, fetchServerSentEvents, UIMessage } from "@tanstack/ai-react";
+import { useMutation } from "@tanstack/react-query";
 import { Send, Paperclip, File, X, Loader2 } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { clsx } from "clsx";
@@ -40,14 +41,43 @@ export function ChatInterface() {
         setFiles(prev => prev.filter((_, i) => i !== index));
     };
 
+    const uploadMutation = useMutation({
+        mutationFn: async (file: File) => {
+            const formData = new FormData();
+            formData.append("file", file);
+            const res = await fetch("/api/upload", {
+                method: "POST",
+                body: formData,
+            });
+            if (!res.ok) throw new Error("Upload failed");
+            return res.json();
+        }
+    });
+
     const onSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!input.trim() && files.length === 0) return;
 
-        // In a real implementation, we would upload files first or send them with the request body
-        console.log("Submitting with files:", files);
+        let currentInput = input;
+        const currentFiles = [...files];
 
-        await sendMessage(input);
+        if (currentFiles.length > 0) {
+            try {
+                // Upload all files
+                const uploadPromises = currentFiles.map(file => uploadMutation.mutateAsync(file));
+                const uploadedFiles = await Promise.all(uploadPromises);
+
+                // Append pseudo-tags
+                const fileContext = uploadedFiles.map((f: any) => `[FILE_ID: ${f.id} FILENAME: ${f.filename}]`).join("\n");
+                currentInput = `${fileContext}\n\n${currentInput}`;
+
+            } catch (error) {
+                console.error("Failed to upload files", error);
+                return;
+            }
+        }
+
+        await sendMessage(currentInput);
         setInput("");
         setFiles([]);
     };
