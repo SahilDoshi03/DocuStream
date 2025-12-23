@@ -14,6 +14,9 @@ Always be helpful, concise, and professional.
 gemini_key = os.getenv("GEMINI_API_KEY")
 llm_model_env = os.getenv("LLM_MODEL")
 
+model = None
+
+
 if gemini_key:
     from pydantic_ai.models.google import GoogleModel
     from pydantic_ai.providers.google import GoogleProvider

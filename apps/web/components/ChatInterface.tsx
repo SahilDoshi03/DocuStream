@@ -2,7 +2,7 @@
 
 import { useChat, fetchServerSentEvents, UIMessage } from "@tanstack/ai-react";
 import { useMutation } from "@tanstack/react-query";
-import { Send, Paperclip, File, X, Loader2 } from "lucide-react";
+import { Send, Paperclip, File, X, Loader2, Database, ChevronDown } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import { clsx } from "clsx";
@@ -10,16 +10,19 @@ import { clsx } from "clsx";
 export function ChatInterface() {
     const [input, setInput] = useState("");
     const [files, setFiles] = useState<File[]>([]);
+    const [selectedIndustry, setSelectedIndustry] = useState<string>("");
+    const [isExtracting, setIsExtracting] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const { messages, sendMessage, isLoading } = useChat({
         connection: fetchServerSentEvents("/api/chat"),
+        body: { industry: selectedIndustry },
         initialMessages: [
             {
                 id: "1",
                 role: "assistant",
-                parts: [{ type: "text", content: "Hello! Upload a document to get started. I can extract data, answer questions, or summarize content." }]
+                parts: [{ type: "text", content: "Hello! Upload a document and select an industry to extract structured data." }]
             }
         ]
     });
@@ -144,6 +147,26 @@ export function ChatInterface() {
                             ))}
                         </div>
                     )}
+
+                    {/* Extraction Controls */}
+                    <div className="flex items-center gap-2 mb-2">
+                        <div className="relative">
+                            <select
+                                value={selectedIndustry}
+                                onChange={(e) => setSelectedIndustry(e.target.value)}
+                                className="appearance-none bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs rounded-lg pl-3 pr-8 py-2 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
+                            >
+                                <option value="" disabled>Select Extraction Type</option>
+                                <option value="banking">Banking & Finance</option>
+                                <option value="healthcare">Healthcare & Pharma</option>
+                                <option value="insurance">Insurance</option>
+                                <option value="legal">Legal & Litigation</option>
+                                <option value="retail">Retail & CPG</option>
+                                <option value="food_beverage">Food & Beverage</option>
+                            </select>
+                            <ChevronDown className="w-3 h-3 absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+                        </div>
+                    </div>
 
                     <form onSubmit={onSubmit} className="relative flex items-end gap-2 bg-zinc-50 dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all shadow-sm">
                         <button
