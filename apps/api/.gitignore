@@ -3,3 +3,11 @@ __pycache__/
 .venv/
 .env
 .DS_Store
+
+# User Data
+uploads/
+docustream.db
+
+# RAG / FAISS Index
+*.bin
+*.pkl

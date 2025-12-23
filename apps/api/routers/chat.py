@@ -41,7 +41,6 @@ async def fake_stream_generator():
     
     yield "event: end\ndata: \n\n"
 
-from services.extraction import extractor
 from database import get_db, File as FileModel
 from services.agent import agent
 from sqlalchemy.orm import Session
@@ -57,6 +56,8 @@ import os
 
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 
+from services.vector_store import vector_store
+
 @router.post("/chat")
 async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     # ... (Prompt construction logic remains same) ...
@@ -71,18 +72,21 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     else:
         last_content = "\n".join([p.content for p in last_msg.content if p.type == 'text'])
 
-    # Regex to find [FILE_ID: ...]
-    file_matches = re.findall(r"\[FILE_ID: ([a-f0-9\-]+) FILENAME: .+?\]", last_content)
+    # RAG Retrieval
+    # We search the vector store for chunks relevant to the latest user query
+    context_chunks = vector_store.search(last_content, k=5)
     
     context_text = ""
-    for file_id in file_matches:
-        db_file = db.query(FileModel).filter(FileModel.id == file_id).first()
-        if db_file and os.path.exists(db_file.file_path):
-            extracted = extractor.extract_text(db_file.file_path)
-            context_text += f"\n--- Content of {db_file.filename} ---\n{extracted}\n-------------------\n"
+    if context_chunks:
+        context_text = "Relevant context from knowledge base:\n"
+        for i, chunk in enumerate(context_chunks):
+            # Include filename if available in metadata
+            source = chunk.get("filename", "Unknown File")
+            context_text += f"\n--- Chunk {i+1} from {source} (Score: {chunk.get('score', 0):.2f}) ---\n{chunk['text']}\n"
     
     if context_text:
-        full_prompt = f"Context from uploaded files:\n{context_text}\n\nUser Query: {last_content}"
+        full_prompt = f"{context_text}\n\nUser Query: {last_content}"
+        print(f"RAG: Injected {len(context_chunks)} chunks into context.")
     else:
         full_prompt = last_content
 
