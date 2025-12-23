@@ -90,16 +90,41 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
         try:
             async with agent.run_stream(full_prompt) as result:
                 yield "event: start\ndata: \n\n"
-                async for chunk in result.stream():
-                    # PydanticAI streams string chunks (usually)
-                    yield f"data: {json.dumps(chunk)}\n\n"
                 
-            yield "event: end\ndata: \n\n"
+                # Track accumulated text to handle snapshots
+                accumulated_text = ""
+                
+                async for chunk in result.stream():
+                    text_chunk = chunk
+                    if not isinstance(text_chunk, str):
+                         text_chunk = str(chunk)
+
+                    # Calculate Delta
+                    if text_chunk.startswith(accumulated_text):
+                        delta = text_chunk[len(accumulated_text):]
+                        accumulated_text = text_chunk
+                    else:
+                        delta = text_chunk
+                        accumulated_text += delta
+                    
+                    if delta:
+                        print(f"DEBUG DELTA: {repr(delta)}")
+                        # Send as structured ContentStreamChunk for TanStack AI
+                        # It requires 'type': 'content', 'delta': delta, AND 'content': accumulated_text
+                        chunk_obj = {
+                            "type": "content", 
+                            "delta": delta,
+                            "content": accumulated_text
+                        }
+                        yield f"data: {json.dumps(chunk_obj)}\n\n"
+                
+                yield "event: end\ndata: \n\n"
+
             
         except Exception as e:
             # Fallback / Error handling
             print(f"AI Error: {e}")
-            yield f"data: {json.dumps(f'Error generating response: {str(e)}. Please check your API key.')}\n\n"
+            yield f"data: {json.dumps(f'Error: {str(e)}')}\n\n"
             yield "event: end\ndata: \n\n"
     
     return StreamingResponse(stream_generator(), media_type="text/event-stream")

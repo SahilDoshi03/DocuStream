@@ -23,6 +23,15 @@ export function ChatInterface() {
         ]
     });
 
+    // DEBUG: Log messages to see what is arriving
+    useEffect(() => {
+        console.log("Current Messages State:", messages);
+        if (messages.length > 0) {
+            const lastMsg = messages[messages.length - 1];
+            console.log("Last Message Parts:", lastMsg.parts);
+        }
+    }, [messages]);
+
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
