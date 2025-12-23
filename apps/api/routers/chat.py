@@ -55,6 +55,8 @@ import os
 
 # ... imports ...
 
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
+
 @router.post("/chat")
 async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     # ... (Prompt construction logic remains same) ...
@@ -84,13 +86,32 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     else:
         full_prompt = last_content
 
+    # Build Message History
+    message_history = []
+    # Iterate over all messages except the last one (which is the new prompt)
+    for msg in request.messages[:-1]:
+        content_str = ""
+        if isinstance(msg.content, str):
+            content_str = msg.content
+        elif isinstance(msg.content, list):
+             content_str = "\n".join([p.content for p in msg.content if p.type == 'text'])
+        
+        if not content_str: 
+            continue
+
+        if msg.role == 'user':
+            message_history.append(ModelRequest(parts=[UserPromptPart(content=content_str)]))
+        elif msg.role == 'assistant':
+            message_history.append(ModelResponse(parts=[TextPart(content=content_str)]))
+
     async def stream_generator():
         # Using PydanticAI streaming
         # Note: We need to handle the agent run inside the async generator
         
         # We might need to ensure the OPENAI_API_KEY is present or catch errors
         try:
-            async with agent.run_stream(full_prompt) as result:
+            # Pass message_history to run_stream
+            async with agent.run_stream(full_prompt, message_history=message_history) as result:
                 yield "event: start\ndata: \n\n"
                 
                 # Track accumulated text to handle snapshots
