@@ -4,6 +4,7 @@ import { useChat, fetchServerSentEvents, UIMessage } from "@tanstack/ai-react";
 import { useMutation } from "@tanstack/react-query";
 import { Send, Paperclip, File, X, Loader2 } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
 import { clsx } from "clsx";
 
 export function ChatInterface() {
@@ -23,14 +24,7 @@ export function ChatInterface() {
         ]
     });
 
-    // DEBUG: Log messages to see what is arriving
-    useEffect(() => {
-        console.log("Current Messages State:", messages);
-        if (messages.length > 0) {
-            const lastMsg = messages[messages.length - 1];
-            console.log("Last Message Parts:", lastMsg.parts);
-        }
-    }, [messages]);
+
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -93,8 +87,8 @@ export function ChatInterface() {
 
     return (
         <div className="flex flex-col h-full max-w-4xl mx-auto w-full">
-            {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
+            {/* Messages Area - Hidden Scrollbar */}
+            <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                 {messages.map(m => (
                     <div key={m.id} className={clsx("flex gap-4", m.role === "user" ? "flex-row-reverse" : "flex-row")}>
                         <div className={clsx(
@@ -103,9 +97,11 @@ export function ChatInterface() {
                                 ? "bg-indigo-600 text-white rounded-br-sm"
                                 : "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-800 dark:text-zinc-200 rounded-bl-sm"
                         )}>
-                            <div className="prose prose-sm dark:prose-invert max-w-none">
+                            <div className={clsx("prose prose-sm max-w-none", m.role === "user" ? "prose-invert" : "dark:prose-invert")}>
                                 {m.parts.map((part, i) => {
-                                    if (part.type === 'text') return <span key={i}>{part.content}</span>;
+                                    if (part.type === 'text') {
+                                        return <ReactMarkdown key={i}>{part.content}</ReactMarkdown>;
+                                    }
                                     if (part.type === 'tool-call') return <span key={i} className="text-xs italic opacity-50 block">Executing {part.name}...</span>;
                                     return null;
                                 })}

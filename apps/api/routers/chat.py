@@ -13,7 +13,7 @@ class MessagePart(BaseModel):
 
 class Message(BaseModel):
     role: str
-    content: str | List[MessagePart]
+    content: str | List[MessagePart] | None = None
 
 class ChatRequest(BaseModel):
     messages: List[Message]
@@ -64,6 +64,8 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     last_content = ""
     if isinstance(last_msg.content, str):
         last_content = last_msg.content
+    elif last_msg.content is None:
+        last_content = ""
     else:
         last_content = "\n".join([p.content for p in last_msg.content if p.type == 'text'])
 
@@ -123,8 +125,16 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
             
         except Exception as e:
             # Fallback / Error handling
+            error_msg = f"Error: {str(e)}"
             print(f"AI Error: {e}")
-            yield f"data: {json.dumps(f'Error: {str(e)}')}\n\n"
+            
+            # Send as structured ContentStreamChunk so frontend displays it
+            error_obj = {
+                "type": "content",
+                "delta": error_msg,
+                "content": error_msg 
+            }
+            yield f"data: {json.dumps(error_obj)}\n\n"
             yield "event: end\ndata: \n\n"
     
     return StreamingResponse(stream_generator(), media_type="text/event-stream")
