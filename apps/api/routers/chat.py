@@ -188,7 +188,7 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
                          "If you cannot extract data, call the tool with null values.\n"
                          "Outputting text or markdown is a system violation."
                     )
-                    active_agent = Agent(model, result_type=BankingExtraction, system_prompt=refined_system_prompt)
+                    active_agent = Agent(model, system_prompt=refined_system_prompt)
                     print(f"Switched to Extraction Agent (Schema: {request.industry})")
                 else:
                     # Prompt-only Mode (for now, until other schemas are defined)
@@ -232,7 +232,8 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
                 extraction_model = None
                 
                 # First attempt
-                result = await active_agent.run(full_prompt, message_history=message_history)
+                from schemas.banking import BankingExtraction
+                result = await active_agent.run(full_prompt, message_history=message_history, output_type=BankingExtraction)
                 
                 while attempt < max_retries:
                     result_data = result.output # 'output' is the attribute for result data
@@ -248,8 +249,26 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
                     
                     # Feed the refusal back to the model
                     retry_prompt = "Server Error: You replied with text. You MUST call the `BankingExtraction` tool to return data. Do not speak."
-                    result = await active_agent.run(retry_prompt, message_history=result.new_messages())
+                    result = await active_agent.run(retry_prompt, message_history=result.new_messages(), output_type=BankingExtraction)
                 
+                # Logic Retry: One-time refinement pass for null fields
+                if extraction_model:
+                     # We can perform a quick check or just blindly ask for a refinement to be safe, as requested.
+                     # "retry and try again to find fields that are null once"
+                     print("Performing Logic Retry (Refining Nulls)...")
+                     refinement_prompt = "Review the document again. Try to populate any fields you left null if the information is present. Return the updated complete object."
+                     
+                     # We extend the conversation history
+                     # Note: result.new_messages() includes the previous assistant ToolCall/Response.
+                     refinement_result = await active_agent.run(refinement_prompt, message_history=result.new_messages(), output_type=BankingExtraction)
+                     
+                     # If the refinement yields a valid model, we take it.
+                     if not isinstance(refinement_result.output, str):
+                          extraction_model = refinement_result.output
+                          print("Refinement successful.")
+                     else:
+                          print("Refinement returned text/failure, keeping original.")
+
                 # Final check
                 if extraction_model:
                      json_str = extraction_model.model_dump_json(indent=2)
