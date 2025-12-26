@@ -37,6 +37,8 @@ import os
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from services.vector_store import vector_store
 from prompts.industries import INDUSTRY_PROMPTS
+from .utils import get_latest_valid_extraction
+from tools.query_data import get_banking_field, BankingData
 
 @router.get("/chats")
 def list_chats(db: Session = Depends(get_db)):
@@ -162,6 +164,11 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
 
     # Dynamic Agent Configuration
     active_agent = agent
+    agent_deps = None
+    
+    # Check for existing extraction first
+    extracted_data = get_latest_valid_extraction(db, chat_id)
+    print(f"DEBUG: Existing extraction found: {extracted_data is not None}")
     
     print(f"DEBUG INCOMING REQUEST: Industry='{request.industry}'")
     if request.industry:
@@ -179,17 +186,36 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
 
                 if request.industry == "banking":
                     from schemas.banking import BankingExtraction
-                    # Schema-enforced Mode
-                    # We use a minimal system prompt that forces tool usage and relies on the Pydantic model for schema definition.
-                    # We avoid feeding the text-based schema from INDUSTRY_PROMPTS as it confuses the model.
-                    refined_system_prompt = (
-                         "You are a strict data extraction engine. You are forbidden from speaking.\n"
-                         "You must ONLY call the `BankingExtraction` tool with data from the document.\n"
-                         "If you cannot extract data, call the tool with null values.\n"
-                         "Outputting text or markdown is a system violation."
-                    )
-                    active_agent = Agent(model, system_prompt=refined_system_prompt)
-                    print(f"Switched to Extraction Agent (Schema: {request.industry})")
+                    
+                    if extracted_data:
+                         # Hybrid Query Mode
+                         # User has already extracted data. We should use the tool to query it.
+                         query_system_prompt = (
+                             "You are a helpful banking assistant with access to previously extracted data. "
+                             "You generally have two modes:\n"
+                             "1. FIELD QUERY: If the user asks for a specific value (e.g. 'What is the borrower name?', 'How much is the loan?'), "
+                             "you MUST use the `get_banking_field` tool to get the exact value. Do not guess.\n"
+                             "2. ANALYSIS/SUMMARY: If the user asks for a summary, analysis, or general question, "
+                             "you should answer based on the full context you have. You do not need to call the tool for every field if summarizing everything, "
+                             "but you should use the tool if you need to be precise about specific numbers.\n\n"
+                             "If the user asks to UPDATE or RE-EXTRACT data, you should refuse and say you are in query mode, "
+                             "or (if implemented) trigger a re-extraction flow (not active yet)."
+                         )
+                         active_agent = Agent(model, system_prompt=query_system_prompt, tools=[get_banking_field], deps_type=BankingData)
+                         agent_deps = BankingData(data=extracted_data)
+                         print(f"Switched to Query Agent (Data Available)")
+                    else:
+                        # Schema-enforced Mode (First time extraction)
+                        # We use a minimal system prompt that forces tool usage and relies on the Pydantic model for schema definition.
+                        # We avoid feeding the text-based schema from INDUSTRY_PROMPTS as it confuses the model.
+                        refined_system_prompt = (
+                             "You are a strict data extraction engine. You are forbidden from speaking.\n"
+                             "You must ONLY call the `BankingExtraction` tool with data from the document.\n"
+                             "If you cannot extract data, call the tool with null values.\n"
+                             "Outputting text or markdown is a system violation."
+                        )
+                        active_agent = Agent(model, system_prompt=refined_system_prompt)
+                        print(f"Switched to Extraction Agent (Schema: {request.industry})")
                 else:
                     # Prompt-only Mode (for now, until other schemas are defined)
                     # For other industries, we just inject the prompt. 
@@ -216,7 +242,8 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
             # yield f"data: {json.dumps(chat_id_chunk)}\n\n" 
 
             # Determine if we are in STRICT Extraction Mode (Banking)
-            is_strict_extraction = request.industry == "banking"
+            # Only if banking industry AND no existing data (or explicit re-extraction requested, not handled yet)
+            is_strict_extraction = (request.industry == "banking" and not extracted_data)
 
             if is_strict_extraction:
                 # ... (Existing strict extraction logic) ... 
@@ -314,8 +341,8 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
                 yield f"data: {json.dumps(chunk_obj)}\n\n"
 
             else:
-                # Standard Chat Streaming (Text or unstructured)
-                async with active_agent.run_stream(full_prompt, message_history=message_history) as result:
+                # Standard Chat Streaming (Text, unstructured, or Query Tool)
+                async with active_agent.run_stream(full_prompt, message_history=message_history, deps=agent_deps) as result:
                     accumulated_text = ""
                     async for chunk in result.stream():
                         if isinstance(chunk, str):
