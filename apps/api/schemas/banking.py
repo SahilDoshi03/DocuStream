@@ -180,5 +180,5 @@ class BankingExtraction(BaseModel):
     summary: Optional[Summary]
     confidence_report: Optional[Dict[str, float]] = Field(
         None, 
-        description="Dictionary mapping field paths (e.g. 'customer.identity.borrowerName') to their confidence score (0.0-1.0). You MUST include a score for EVERY extracted non-null field in the entire object."
+        description="Dictionary mapping LEAF field paths (e.g. 'customer.identity.borrowerName') to their confidence score (0.0-1.0). Do NOT score top-level objects; score the specific values."
     )
