@@ -2,8 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from database import init_db
-from routers import upload, chat
+from routers import upload, chat, nango
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI()
 
@@ -32,6 +35,7 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 # Routers
 app.include_router(upload.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
+app.include_router(nango.router, prefix="/api/nango")
 
 @app.get("/")
 def read_root():

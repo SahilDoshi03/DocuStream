@@ -39,6 +39,11 @@ from services.vector_store import vector_store
 from prompts.industries import INDUSTRY_PROMPTS
 from .utils import get_latest_valid_extraction
 from tools.query_data import get_banking_field, BankingData
+from tools.google_drive import export_to_drive, DriveDeps
+from services.nango import nango_service
+
+from typing import Dict, Any
+from dataclasses import dataclass
 
 @router.get("/chats")
 def list_chats(db: Session = Depends(get_db)):
@@ -204,6 +209,7 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
                          active_agent = Agent(model, system_prompt=query_system_prompt, tools=[get_banking_field], deps_type=BankingData)
                          agent_deps = BankingData(data=extracted_data)
                          print(f"Switched to Query Agent (Data Available)")
+                         print(f"Switched to Query Agent (Data Available)")
                     else:
                         # Schema-enforced Mode (First time extraction)
                         # We use a minimal system prompt that forces tool usage and relies on the Pydantic model for schema definition.
@@ -224,6 +230,60 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
             
             except Exception as e:
                 print(f"Failed to configure agent: {e}")
+
+
+
+    # Check for Export Capability (Nango)
+    # This logic runs if we haven't already locked into a strict extraction or query agent, OR we can enhance the current agent.
+    # For now, let's allow export ONLY if we aren't in strict extraction mode. 
+    # If the user asks "Export this to drive", we need the tool.
+    
+    # We'll use a hardcoded Test Connection ID 'test-user-1' as per plan, or derive from chat_id?
+    # Let's try to fetch a token for 'google-drive'.
+    nango_connection_id = "test-user-1" # FIXME: Get from header or Auth
+    drive_token = nango_service.get_connection_token(nango_connection_id, "google-drive")
+    
+    if drive_token and not (request.industry == "banking" and not extracted_data):
+        # We have a drive token and we are NOT in strict extraction mode.
+        # We can enable the Drive Export tool.
+        
+        # If we already have an agent (e.g. Query Agent), we need to add the tool to it?
+        # Pydantic AI agents are immutableish. We might need to recreate or use a fresh one.
+        # Actually, if we are in Query Mode, we used `tools=[get_banking_field]`. We should add `export_to_drive`.
+        
+        # Redefine agent if we are in Query Mode to include both
+        if request.industry == "banking" and extracted_data:
+             # Query + Export
+             query_system_prompt = (
+                 "You are a helpful banking assistant with access to previously extracted data. "
+                 "You generally have two modes:\n"
+                 "1. FIELD QUERY: If the user asks for a specific value (e.g. 'What is the borrower name?', 'How much is the loan?'), "
+                 "you MUST use the `get_banking_field` tool to get the exact value. Do not guess.\n"
+                 "2. ANALYSIS/SUMMARY: If the user asks for a summary, analysis, or general question, "
+                 "you should answer based on the full context you have.\n"
+                 "3. EXPORT: If the user asks to export data to Google Drive, use the `export_to_drive` tool.\n"
+             )
+             
+             # We need a Combined Dependency class or pass a tuple?
+             # Pydantic AI supports single dependency object usually. We can create a CombinedDeps.
+             @dataclass
+             class CombinedDeps:
+                 data: Dict[str, Any]
+                 access_token: str
+                 
+             active_agent = Agent(model, system_prompt=query_system_prompt, tools=[get_banking_field, export_to_drive], deps_type=CombinedDeps)
+             agent_deps = CombinedDeps(data=extracted_data, access_token=drive_token)
+             print("Enabled Query + Drive Export Agent")
+             
+        elif not request.industry:
+             # General Chat Mode + Export
+             export_system_prompt = (
+                 "You are a helpful assistant. "
+                 "If the user asks to export a file or content to Google Drive, use the `export_to_drive` tool."
+             )
+             active_agent = Agent(model, system_prompt=export_system_prompt, tools=[export_to_drive], deps_type=DriveDeps)
+             agent_deps = DriveDeps(access_token=drive_token)
+             print("Enabled General Drive Export Agent")
 
     async def stream_generator():
         yield "event: start\ndata: \n\n"

@@ -6,18 +6,25 @@ from dataclasses import dataclass
 class BankingData:
     data: Dict[str, Any]
 
-def get_banking_field(ctx: RunContext[BankingData], field_path: str) -> str:
+def get_banking_field(ctx: RunContext[Any], field_path: str) -> str:
     """
     Retrieve a specific field value from the extracted banking data using dot notation.
     
     Args:
-        ctx: The context containing the banking data.
+        ctx: The context containing the banking data (must have .data attribute).
         field_path: The path to the field, e.g., 'customer.identity.borrowerName' or 'loan.mortgage.loanAmount'.
     
     Returns:
         The value of the field if found, or a descriptive message if not found.
     """
-    data = ctx.deps.data
+    # Check if deps is the dataclass or just the data dict itself (if single dep)
+    if hasattr(ctx.deps, 'data'):
+        data = ctx.deps.data
+    elif isinstance(ctx.deps, dict):
+        data = ctx.deps
+    else:
+        return "Error: Context missing extracted data."
+        
     keys = field_path.split('.')
     current = data
     
