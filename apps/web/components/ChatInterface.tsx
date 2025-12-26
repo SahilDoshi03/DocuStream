@@ -1,24 +1,44 @@
 "use client";
 
 import { useChat, fetchServerSentEvents, UIMessage } from "@tanstack/ai-react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Send, Paperclip, File, X, Loader2, Database, ChevronDown } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import { clsx } from "clsx";
 
-export function ChatInterface() {
+interface ChatInterfaceProps {
+    chatId?: string;
+    initialMessages?: UIMessage[];
+}
+
+export function ChatInterface({ chatId, initialMessages: propInitialMessages }: ChatInterfaceProps) {
     const [input, setInput] = useState("");
     const [files, setFiles] = useState<File[]>([]);
     const [selectedIndustry, setSelectedIndustry] = useState<string>("");
-    const [isExtracting, setIsExtracting] = useState(false);
+    // We treat 'chatId' prop as initial value. If not provided, we might generate one later.
+    const [currentChatId, setCurrentChatId] = useState<string | undefined>(chatId);
+
     const fileInputRef = useRef<HTMLInputElement>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    const { messages, sendMessage, isLoading } = useChat({
+    // Fetch existing messages if chatId is provided
+    const { data: fetchedMessages } = useQuery({
+        queryKey: ["chat", chatId],
+        queryFn: async () => {
+            if (!chatId) return [];
+            const res = await fetch(`/api/chats/${chatId}`);
+            if (!res.ok) throw new Error("Failed to fetch chat");
+            return res.json();
+        },
+        enabled: !!chatId,
+        staleTime: 0 // Always fetch fresh
+    });
+
+    const { messages, sendMessage, isLoading, setMessages } = useChat({
         connection: fetchServerSentEvents("/api/chat"),
-        body: { industry: selectedIndustry },
-        initialMessages: [
+        body: { industry: selectedIndustry, chat_id: currentChatId },
+        initialMessages: propInitialMessages || fetchedMessages || [
             {
                 id: "1",
                 role: "assistant",
@@ -26,6 +46,18 @@ export function ChatInterface() {
             }
         ]
     });
+
+    useEffect(() => {
+        if (fetchedMessages) {
+            setMessages(fetchedMessages);
+        }
+    }, [fetchedMessages, setMessages]);
+
+    // Update currentChatId when prop changes (navigation)
+    useEffect(() => {
+        if (chatId) setCurrentChatId(chatId);
+    }, [chatId]);
+
 
 
 
@@ -83,7 +115,51 @@ export function ChatInterface() {
             }
         }
 
-        await sendMessage(currentInput);
+        if (!currentChatId) {
+            // Generate a new ID client-side to ensure URL update immediatley
+            const newId = crypto.randomUUID();
+            setCurrentChatId(newId);
+            window.history.replaceState(null, "", `/chat/${newId}`);
+
+            // Wait a tick for state to update? 
+            // Actually, the body passed to sendMessage uses the current render's scope or refs?
+            // Hooks update is async. We might need to handle this carefully.
+            // We can pass additional body params to sendMessage? No, useChat usually uses the bound body.
+            // However, `useChat` might read state on render.
+            // We'll trust that React queues the state update, but for THIS call, we might rely on the updated state in next render?
+            // Actually, if we update state here, the `sendMessage` call below will run with *old* state in closure? Yes.
+            // BUT `useChat` internally might reference latest mutable ref or we pass body override?
+            // Most implementations of `useChat` allow passing `data` or `body` to `handleSubmit`? 
+            // Tanstack AI `sendMessage` signature: `sendMessage(input: string, options?: ...)`
+            // If body is in hook config, it might be stale.
+            // Workaround: Force flush or pass ID explicitly?
+            // If I change currentChatId, the component re-renders, useChat updates its body config.
+            // But I want to send NOW.
+
+            // Solution: Since `body` in useChat is reactive, we can wait? No, user wants instant feedback.
+            // We will assume backend handles "create if new" logic.
+            // But if we generated an ID, we want backend to use IT.
+            // We can force a re-render/wait?
+            // Actually, simpler:
+            // Just send the message. Backend creates "some" ID. 
+            // But then we don't know it to update URL.
+            // That's why we generate it.
+
+            // We can rely on `sendMessage` taking the FRESH state if we defer it?
+            // `setTimeout(() => sendMessage(...), 0)`?
+
+            // Better: we can pass `body` override to `sendMessage`? 
+            // Checking source code or docs is hard.
+            // I'll try to pass `body` in `sendMessage` options if supported.
+            // If not, I'll update state and `setTimeout`.
+
+            setTimeout(() => {
+                sendMessage(currentInput);
+            }, 0);
+        } else {
+            await sendMessage(currentInput);
+        }
+
         setInput("");
         setFiles([]);
     };

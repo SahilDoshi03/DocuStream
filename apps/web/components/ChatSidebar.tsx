@@ -1,17 +1,42 @@
 "use client";
 
 import Link from "next/link";
-import { Plus, MessageSquare, Settings, FileText } from "lucide-react";
+import { Plus, MessageSquare, Settings, FileText, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
+import { useQuery, useMutation } from "@tanstack/react-query";
 
-// Mock data for chat history
-const recentChats = [
-    { id: "1", title: "Invoice Extraction - March", date: "Today" },
-    { id: "2", title: "Contract Review v2", date: "Yesterday" },
-    { id: "3", title: "Receipts Q1", date: "Previous 7 Days" },
-];
+// Mock data removed
+
 
 export function ChatSidebar() {
+    const { data: chats, refetch } = useQuery({
+        queryKey: ["chats"],
+        queryFn: async () => {
+            const res = await fetch("/api/chats");
+            if (!res.ok) throw new Error("Failed to fetch chats");
+            return res.json();
+        }
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: async (chatId: string) => {
+            const res = await fetch(`/api/chats/${chatId}`, { method: "DELETE" });
+            if (!res.ok) throw new Error("Failed to delete chat");
+            return res.json();
+        },
+        onSuccess: () => {
+            refetch();
+        }
+    });
+
+    const handleDelete = (e: React.MouseEvent, chatId: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (confirm("Are you sure you want to delete this chat?")) {
+            deleteMutation.mutate(chatId);
+        }
+    };
+
     return (
         <div className="flex h-screen flex-col justify-between border-r bg-zinc-50 dark:bg-zinc-900 w-64 flex-shrink-0">
             <div className="px-4 py-4 flex flex-col h-full">
@@ -44,14 +69,22 @@ export function ChatSidebar() {
                         Recent
                     </div>
                     <nav className="flex flex-col gap-1">
-                        {recentChats.map((chat) => (
+                        {chats?.map((chat: any) => (
                             <Link
                                 key={chat.id}
                                 href={`/chat/${chat.id}`}
-                                className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/50 dark:hover:bg-zinc-800 transition-colors whitespace-nowrap overflow-hidden text-ellipsis"
+                                className="group flex items-center justify-between rounded-md px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200/50 dark:hover:bg-zinc-800 transition-colors"
                             >
-                                <MessageSquare className="h-4 w-4 flex-shrink-0" />
-                                <span className="truncate">{chat.title}</span>
+                                <div className="flex items-center gap-3 overflow-hidden">
+                                    <MessageSquare className="h-4 w-4 flex-shrink-0" />
+                                    <span className="truncate">{chat.title || "New Chat"}</span>
+                                </div>
+                                <button
+                                    onClick={(e) => handleDelete(e, chat.id)}
+                                    className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-500 transition-opacity"
+                                >
+                                    <Trash2 className="h-3 w-3" />
+                                </button>
                             </Link>
                         ))}
                     </nav>
