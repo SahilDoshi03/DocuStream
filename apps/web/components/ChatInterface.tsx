@@ -35,9 +35,26 @@ export function ChatInterface({ chatId, initialMessages: propInitialMessages }: 
         staleTime: 0 // Always fetch fresh
     });
 
+    // Use refs to ensure the connection adapter always accesses the latest state
+    // even if useChat doesn't recreate the client on prop changes.
+    const industryRef = useRef(selectedIndustry);
+    const chatIdRef = useRef(currentChatId);
+
+    useEffect(() => {
+        industryRef.current = selectedIndustry;
+    }, [selectedIndustry]);
+
+    useEffect(() => {
+        chatIdRef.current = currentChatId;
+    }, [currentChatId]);
+
     const { messages, sendMessage, isLoading, setMessages } = useChat({
-        connection: fetchServerSentEvents("/api/chat"),
-        body: { industry: selectedIndustry, chat_id: currentChatId },
+        connection: fetchServerSentEvents("/api/chat", () => ({
+            body: {
+                industry: industryRef.current,
+                chat_id: chatIdRef.current
+            }
+        })),
         initialMessages: propInitialMessages || fetchedMessages || [
             {
                 id: "1",
