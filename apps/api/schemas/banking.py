@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional
+from typing import Optional, List, Dict
 
 # Banking & Finance Schema
 
@@ -178,3 +178,7 @@ class BankingExtraction(BaseModel):
     compliance: Optional[Compliance]
     operational: Optional[Operational]
     summary: Optional[Summary]
+    confidence_report: Optional[Dict[str, float]] = Field(
+        None, 
+        description="Dictionary mapping field paths (e.g. 'customer.identity.borrowerName') to their confidence score (0.0-1.0). You MUST include a score for EVERY extracted non-null field in the entire object."
+    )

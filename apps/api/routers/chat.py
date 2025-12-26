@@ -251,23 +251,39 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
                     retry_prompt = "Server Error: You replied with text. You MUST call the `BankingExtraction` tool to return data. Do not speak."
                     result = await active_agent.run(retry_prompt, message_history=result.new_messages(), output_type=BankingExtraction)
                 
-                # Logic Retry: One-time refinement pass for null fields
+                # Logic Retry: Confidence-based Refinement using `confidence_report`
                 if extraction_model:
-                     # We can perform a quick check or just blindly ask for a refinement to be safe, as requested.
-                     # "retry and try again to find fields that are null once"
-                     print("Performing Logic Retry (Refining Nulls)...")
-                     refinement_prompt = "Review the document again. Try to populate any fields you left null if the information is present. Return the updated complete object."
+                     print("Analyzing confidence report...")
+                     low_confidence_items = []
                      
-                     # We extend the conversation history
-                     # Note: result.new_messages() includes the previous assistant ToolCall/Response.
-                     refinement_result = await active_agent.run(refinement_prompt, message_history=result.new_messages(), output_type=BankingExtraction)
+                     # Check the explicitly reported confidence scores
+                     if hasattr(extraction_model, 'confidence_report') and extraction_model.confidence_report:
+                         for field, confidence in extraction_model.confidence_report.items():
+                             # Trigger retry for anything less than perfect certainty to prove it works
+                             if confidence < 0.95:
+                                 low_confidence_items.append(f"{field} (Confidence: {confidence})")
                      
-                     # If the refinement yields a valid model, we take it.
-                     if not isinstance(refinement_result.output, str):
-                          extraction_model = refinement_result.output
-                          print("Refinement successful.")
+                     # Also check for nulls in critical sections (optional, but good for robustness)
+                     # For now, we rely on the model self-reporting via confidence_report, or we can add a quick check.
+                     # Let's stick to the plan: use the report.
+                     
+                     if low_confidence_items:
+                         print(f"Found {len(low_confidence_items)} low confidence items. Performing Refinement...")
+                         refinement_prompt = (
+                             f"You reported low confidence for the following fields: {'; '.join(low_confidence_items)}. "
+                             "Update the fields and the confidence report. "
+                             "Return the updated complete object."
+                         )
+                         
+                         refinement_result = await active_agent.run(refinement_prompt, message_history=result.new_messages(), output_type=BankingExtraction)
+                         
+                         if not isinstance(refinement_result.output, str):
+                              extraction_model = refinement_result.output
+                              print("Refinement successful.")
+                         else:
+                              print("Refinement returned text/failure, keeping original.")
                      else:
-                          print("Refinement returned text/failure, keeping original.")
+                         print("No low confidence issues reported. Skipping refinement.")
 
                 # Final check
                 if extraction_model:
