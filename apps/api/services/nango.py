@@ -12,6 +12,42 @@ class NangoService:
             print(f"DEBUG: .env exists in CWD? {os.path.exists('.env')}")
             print(f"DEBUG: All Env Keys: {list(os.environ.keys())}")
 
+    def get_connection_for_user(self, user_id: str, provider_config_key: str) -> Optional[str]:
+        """
+        Finds a connection ID for a given user and provider.
+        """
+        if not self.secret_key:
+            return None
+            
+        url = f"{self.base_url}/connection"
+        headers = {"Authorization": f"Bearer {self.secret_key}"}
+        
+        try:
+            # We fetch all (pagination might be needed in prod, but fine for now)
+            # API might support filtering ?end_user_id=... but let's filter in memory to be safe and quick
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            connections = data.get("connections", [])
+            
+            for conn in connections:
+                # Check provider
+                if conn.get("provider_config_key") != provider_config_key:
+                    continue
+                
+                # Check user
+                # Structure: "end_user": { "id": "..." }
+                end_user = conn.get("end_user", {})
+                if isinstance(end_user, dict) and end_user.get("id") == user_id:
+                     return conn.get("connection_id")
+                elif end_user == user_id: # Handle if it's just a string in some versions
+                     return conn.get("connection_id")
+                     
+            return None
+        except Exception as e:
+            print(f"Failed to list Nango connections: {e}")
+            return None
+
     def get_connection_token(self, connection_id: str, provider_config_key: str) -> Optional[str]:
         """
         Fetch the access token for a given connection from Nango.

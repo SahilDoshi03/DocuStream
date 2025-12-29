@@ -238,10 +238,18 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
     # For now, let's allow export ONLY if we aren't in strict extraction mode. 
     # If the user asks "Export this to drive", we need the tool.
     
-    # We'll use a hardcoded Test Connection ID 'test-user-1' as per plan, or derive from chat_id?
     # Let's try to fetch a token for 'google-drive'.
-    nango_connection_id = "test-user-1" # FIXME: Get from header or Auth
-    drive_token = nango_service.get_connection_token(nango_connection_id, "google-drive")
+    nango_user_id = "test-user-1" 
+    
+    # 1. Lookup the valid connection ID for this user
+    nango_connection_id = nango_service.get_connection_for_user(nango_user_id, "google-drive")
+    
+    drive_token = None
+    if nango_connection_id:
+        print(f"DEBUG: Found connection ID {nango_connection_id} for user {nango_user_id}")
+        drive_token = nango_service.get_connection_token(nango_connection_id, "google-drive")
+    else:
+        print(f"DEBUG: No 'google-drive' connection found for user {nango_user_id}")
     
     if drive_token and not (request.industry == "banking" and not extracted_data):
         # We have a drive token and we are NOT in strict extraction mode.

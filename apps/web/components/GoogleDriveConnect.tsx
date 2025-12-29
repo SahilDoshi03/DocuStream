@@ -47,7 +47,7 @@ export function GoogleDriveConnect() {
 
     return (
         <div className="p-4 border rounded shadow-sm bg-white">
-            <h3 className="text-lg font-medium mb-2">Google Drive Integration</h3>
+            <h3 className="text-lg text-black font-medium mb-2">Google Drive Integration</h3>
             <p className="text-sm text-gray-500 mb-4">
                 Connect your Google Drive to export extracted data directly.
             </p>
