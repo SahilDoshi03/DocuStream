@@ -1,15 +1,43 @@
-from fastapi import APIRouter, Response
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-import asyncio
 import json
 from pydantic import BaseModel
 from typing import List
+from services.agent import agent, model
+from pydantic_ai import Agent
+from database import (
+    get_db,
+    Chat as ChatModel,
+    Message as MessageModel
+)
+from sqlalchemy.orm import Session
+from sqlalchemy import desc
+from fastapi import Depends, HTTPException
+import uuid
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    UserPromptPart
+)
+from services.vector_store import vector_store
+from prompts.industries import INDUSTRY_PROMPTS
+from .utils import get_latest_valid_extraction
+from tools.query_data import get_banking_field, BankingData
+from tools.google_drive import export_to_drive, DriveDeps
+from services.nango import nango_service
+
+from typing import Dict, Any
+from dataclasses import dataclass
+
 
 router = APIRouter()
 
+
 class MessagePart(BaseModel):
-    type: str # 'text'
+    type: str  # 'text'
     content: str
+
 
 class Message(BaseModel):
     role: str
@@ -21,46 +49,28 @@ class ChatRequest(BaseModel):
     industry: str | None = None
     chat_id: str | None = None
 
-# ... imports ...
-from services.agent import agent, model
-from typing import Union
-from pydantic_ai import Agent
-
-from database import get_db, File as FileModel, Chat as ChatModel, Message as MessageModel
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from fastapi import Depends, HTTPException, Path
-import uuid
-import re
-import os
-
-from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
-from services.vector_store import vector_store
-from prompts.industries import INDUSTRY_PROMPTS
-from .utils import get_latest_valid_extraction
-from tools.query_data import get_banking_field, BankingData
-from tools.google_drive import export_to_drive, DriveDeps
-from services.nango import nango_service
-
-from typing import Dict, Any
-from dataclasses import dataclass
 
 @router.get("/chats")
 def list_chats(db: Session = Depends(get_db)):
     chats = db.query(ChatModel).order_by(desc(ChatModel.created_at)).all()
-    return [{"id": c.id, "title": c.title, "created_at": c.created_at} for c in chats]
+    return [
+        {"id": c.id, "title": c.title, "created_at": c.created_at}
+        for c in chats
+    ]
+
 
 @router.get("/chats/{chat_id}")
 def get_chat(chat_id: str, db: Session = Depends(get_db)):
     chat = db.query(ChatModel).filter(ChatModel.id == chat_id).first()
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-    
-    # We need to map DB messages to the format expected by the frontend/pydantic-ai
+
+    # We need to map DB messages to the format expected
+    # by the frontend/pydantic-ai
+
     # Frontend expects: { id: str, role: str, parts: [...] }
     # DB has content as text (or potentially JSON string if we decide later).
     # Current DB model has content=Text.
-    result_messages = []
     for msg in chat.messages: # relying on relationship back_populates="messages" -> order? default DB order might not be guaranteed.
         # Should probably order by created_at.
         pass
