@@ -5,7 +5,7 @@ import shutil
 import os
 import uuid
 from services.extraction import extractor
-from services.chunker import chunk_text
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from services.vector_store import vector_store
 
 router = APIRouter()
@@ -54,7 +54,13 @@ async def upload_file(
 
         if full_text:
             # 2. Chunk Text
-            chunks = chunk_text(full_text)
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=200,
+                length_function=len,
+                is_separator_regex=False,
+            )
+            chunks = text_splitter.split_text(full_text)
 
             # 3. Prepare Documents for Vector Store
             documents = []
