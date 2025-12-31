@@ -1,15 +1,25 @@
-from sqlalchemy import create_engine, Column, String, Integer, DateTime, ForeignKey, Text, JSON
+from sqlalchemy import create_engine, Column, String, Integer, DateTime, ForeignKey, Text, JSON, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 import os
+from pgvector.sqlalchemy import Vector
 
-DATABASE_URL = "sqlite:///./docustream.db"
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/docustream")
+
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    text = Column(Text)
+    metadata_ = Column("metadata", JSON, default={})
+    embedding = Column(Vector(384))
 
 class Chat(Base):
     __tablename__ = "chats"
@@ -47,6 +57,9 @@ class File(Base):
     chat = relationship("Chat", back_populates="files")
 
 def init_db():
+    with engine.connect() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.commit()
     Base.metadata.create_all(bind=engine)
 
 def get_db():
