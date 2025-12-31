@@ -421,19 +421,29 @@ async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
             else:
                 # Standard Chat Streaming (Text, unstructured, or Query Tool)
                 async with active_agent.run_stream(full_prompt, message_history=message_history, deps=agent_deps) as result:
-                    accumulated_text = ""
+                    previous_text = ""
                     async for chunk in result.stream():
                         if isinstance(chunk, str):
-                            delta = chunk
+                            # PydanticAI streams snapshots (full text so far)
+                            snapshot = chunk
+                            
+                            # Calculate delta for the frontend (if needed)
+                            if snapshot.startswith(previous_text):
+                                delta = snapshot[len(previous_text):]
+                            else:
+                                # Fallback if snapshot doesn't start with previous (shouldn't happen in append-only)
+                                delta = snapshot
+                            
                             chunk_obj = {
                                 "type": "content", 
                                 "delta": delta,
-                                "content": accumulated_text + delta
+                                "content": snapshot
                             }
-                            accumulated_text += delta
+                            
+                            previous_text = snapshot
                             yield f"data: {json.dumps(chunk_obj)}\n\n"
                     
-                    accumulated_response = accumulated_text # Capture full text
+                    accumulated_response = previous_text # Capture full text
 
             # Save Assistant Response
             # We must use a new session or ensure thread safety? 
