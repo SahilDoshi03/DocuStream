@@ -3,13 +3,15 @@ import pickle
 import os
 import numpy as np
 from typing import List, Dict, Tuple
-from services.embeddings import embedding_service
+from langchain_huggingface import HuggingFaceEmbeddings
 
 class VectorStore:
     def __init__(self, index_path="faiss_index.bin", metadata_path="faiss_metadata.pkl", dimension=384):
         self.index_path = index_path
         self.metadata_path = metadata_path
         self.dimension = dimension
+        self.embedding_model = HuggingFaceEmbeddings(model_name='all-MiniLM-L6-v2')
+
         
         # Initialize FAISS index
         # IndexFlatL2 is efficient for small-medium datasets. 
@@ -30,7 +32,7 @@ class VectorStore:
             return
 
         texts = [doc['text'] for doc in documents]
-        embeddings = embedding_service.get_embeddings(texts)
+        embeddings = self.embedding_model.embed_documents(texts)
         
         # Convert to numpy float32 array for FAISS
         embeddings_np = np.array(embeddings).astype('float32')
@@ -56,7 +58,7 @@ class VectorStore:
         if self.index.ntotal == 0:
             return []
 
-        query_embedding = embedding_service.get_embedding(query)
+        query_embedding = self.embedding_model.embed_query(query)
         query_np = np.array([query_embedding]).astype('float32')
         
         # Search
